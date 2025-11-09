@@ -58,7 +58,7 @@ class MySQL:
                 # In serverless, connections may be closed between invocations
                 try:
                     self._connection.ping(reconnect=False)
-                except:
+                except Exception:
                     # Connection lost, reconnect
                     self._connection = None
                     self.connect()
@@ -66,7 +66,12 @@ class MySQL:
             # Connection lost, reconnect
             print(f"Connection error, reconnecting: {str(e)}")
             self._connection = None
-            self.connect()
+            try:
+                self.connect()
+            except Exception as reconnect_error:
+                # If reconnection fails, raise a more descriptive error
+                print(f"Failed to reconnect to database: {str(reconnect_error)}")
+                raise ConnectionError(f"Database connection failed: {str(reconnect_error)}") from reconnect_error
         return self._connection
     
     def commit(self):
@@ -106,8 +111,12 @@ class ConnectionWrapper:
     
     def cursor(self):
         """Get a cursor from the connection"""
-        conn = self.mysql.get_connection()
-        return conn.cursor()
+        try:
+            conn = self.mysql.get_connection()
+            return conn.cursor()
+        except Exception as e:
+            print(f"Error getting cursor: {str(e)}")
+            raise
     
     def commit(self):
         """Commit the transaction"""
@@ -184,8 +193,15 @@ def before_request():
     """Ensure database is initialized before handling requests"""
     # Only initialize if we're accessing a route that needs the database
     # Skip for static files and simple routes
-    if request.endpoint and request.endpoint not in ['static', 'generate_qr']:
-        ensure_db_initialized()
+    # Wrap in try-except to prevent function invocation failures
+    try:
+        if request.endpoint and request.endpoint not in ['static', 'generate_qr']:
+            ensure_db_initialized()
+    except Exception as e:
+        # Log error but don't fail the request - let individual routes handle DB errors
+        print(f"Warning: Database initialization skipped: {str(e)}")
+        # Don't raise - allow the request to continue
+        # Individual routes will handle their own DB connection errors
 
 # Helper function to calculate distance
 def calculate_distance(address):
@@ -799,9 +815,32 @@ def submit_feedback():
 def not_found(error):
     return render_template('404.html'), 404
 
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle internal server errors gracefully"""
+    print(f"Internal server error: {str(error)}")
+    return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred'}), 500
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Global exception handler to prevent FUNCTION_INVOCATION_FAILED"""
+    print(f"Unhandled exception: {str(e)}")
+    # Return a proper response instead of letting the exception propagate
+    # This prevents FUNCTION_INVOCATION_FAILED errors on Vercel
+    try:
+        if request.is_json or request.path.startswith('/api/'):
+            return jsonify({'error': 'An error occurred', 'message': str(e)}), 500
+        flash('An error occurred. Please try again.', 'error')
+        return redirect(url_for('index'))
+    except Exception:
+        # Fallback if even error handling fails
+        return jsonify({'error': 'Internal server error'}), 500
+
 # Export handler for Vercel serverless functions
-# This is required for @vercel/python to work correctly
+# Vercel Python runtime expects a WSGI application
+# The handler must be the Flask app instance
 handler = app
 
+# For local development
 if __name__ == '__main__':
     app.run(debug=True) 
