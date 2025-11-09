@@ -151,10 +151,10 @@
             <form method="POST" action="{{ url_for('register') }}" id="registration-form">
                 <div class="form-group">
                     <label for="usn">USN</label>
-                    <input type="text" id="usn" name="usn" required placeholder="e.g., 1SI20CS001 or 20CS001" pattern="[A-Z0-9]+" title="USN should contain only uppercase letters and numbers">
+                    <input type="text" id="usn" name="usn" required placeholder="e.g., 4mw23aio45 or 1SI20CS001" pattern="[A-Za-z0-9]+" title="USN should contain only letters and numbers">
                     <div class="form-hint">
                         <i class="fas fa-info-circle"></i>
-                        Format: Year + Branch Code + Number (e.g., 1SI20CS001, 20CS001, 21EC123)
+                        Format: Letters and numbers only (e.g., 4mw23aio45, 1SI20CS001, 20CS001)
                     </div>
                 </div>
                 <div class="form-group">

@@ -6,6 +6,7 @@ import qrcode
 from io import BytesIO
 import json
 import pymysql
+from pymysql import IntegrityError, Error as PyMySQLError
 
 # Load environment variables from .env file (only for local development)
 # On Vercel/Render, environment variables are set in the dashboard
@@ -225,18 +226,44 @@ def index():
 def register():
     if request.method == 'POST':
         try:
-            usn = request.form['usn']
-            name = request.form['name']
-            phone = request.form['phone']
-            email = request.form['email']
+            usn = request.form['usn'].strip()
+            name = request.form['name'].strip()
+            phone = request.form['phone'].strip()
+            email = request.form['email'].strip()
             password = request.form['password']
             bus_number = request.form.get('bus_number')
-            address = request.form['address']
+            address = request.form['address'].strip()
+            
+            # Validate required fields
+            if not usn or not name or not phone or not email or not password or not address:
+                flash('Please fill in all required fields.', 'error')
+                return render_template('register.html')
+            
+            # Validate password length
+            if len(password) < 6:
+                flash('Password must be at least 6 characters long.', 'error')
+                return render_template('register.html')
             
             distance = calculate_distance(address)
             hashed_password = generate_password_hash(password)
             
             cur = mysql.connection.cursor()
+            
+            # Check if USN already exists
+            cur.execute('SELECT id FROM user WHERE usn = %s', (usn,))
+            if cur.fetchone():
+                cur.close()
+                flash(f'USN {usn} is already registered. Please use a different USN or login.', 'error')
+                return render_template('register.html')
+            
+            # Check if email already exists
+            cur.execute('SELECT id FROM user WHERE email = %s', (email,))
+            if cur.fetchone():
+                cur.close()
+                flash('This email is already registered. Please use a different email or login.', 'error')
+                return render_template('register.html')
+            
+            # Insert new user
             cur.execute('''
                 INSERT INTO user (usn, name, phone, email, password, bus_number, address, distance, balance)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -246,9 +273,29 @@ def register():
             
             flash('Registration successful! Please login.', 'success')
             return redirect(url_for('login'))
+        except IntegrityError as e:
+            # Handle database integrity errors (duplicate entries, foreign key violations)
+            error_msg = str(e).lower()
+            if 'duplicate' in error_msg or 'unique' in error_msg:
+                if 'usn' in error_msg:
+                    flash(f'USN {usn} is already registered. Please use a different USN or login.', 'error')
+                elif 'email' in error_msg:
+                    flash('This email is already registered. Please use a different email or login.', 'error')
+                else:
+                    flash('This information is already registered. Please check your details.', 'error')
+            else:
+                flash('Registration failed due to database constraint. Please check your information.', 'error')
+            return render_template('register.html')
+        except PyMySQLError as e:
+            # Handle database connection/query errors
+            print(f"Database error during registration: {str(e)}")
+            flash('Database error occurred. Please try again later.', 'error')
+            return render_template('register.html')
         except Exception as e:
-            flash('Registration failed. Please try again.', 'error')
-            return redirect(url_for('register'))
+            # Handle any other errors
+            print(f"Error during registration: {str(e)}")
+            flash(f'Registration failed: {str(e)}. Please try again.', 'error')
+            return render_template('register.html')
     
     return render_template('register.html')
 
