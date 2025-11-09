@@ -225,18 +225,36 @@ def index():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
+        usn = None
+        email = None
+        cur = None
         try:
-            usn = request.form['usn'].strip()
-            name = request.form['name'].strip()
-            phone = request.form['phone'].strip()
-            email = request.form['email'].strip()
-            password = request.form['password']
-            bus_number = request.form.get('bus_number')
-            address = request.form['address'].strip()
+            usn = request.form.get('usn', '').strip()
+            name = request.form.get('name', '').strip()
+            phone = request.form.get('phone', '').strip()
+            email = request.form.get('email', '').strip()
+            password = request.form.get('password', '')
+            bus_number = request.form.get('bus_number', '')
+            address = request.form.get('address', '').strip()
             
             # Validate required fields
-            if not usn or not name or not phone or not email or not password or not address:
-                flash('Please fill in all required fields.', 'error')
+            if not usn:
+                flash('USN is required. Please enter your USN.', 'error')
+                return render_template('register.html')
+            if not name:
+                flash('Full name is required. Please enter your name.', 'error')
+                return render_template('register.html')
+            if not phone:
+                flash('Phone number is required. Please enter your phone number.', 'error')
+                return render_template('register.html')
+            if not email:
+                flash('Email is required. Please enter your email address.', 'error')
+                return render_template('register.html')
+            if not password:
+                flash('Password is required. Please enter a password.', 'error')
+                return render_template('register.html')
+            if not address:
+                flash('Address is required. Please enter your address.', 'error')
                 return render_template('register.html')
             
             # Validate password length
@@ -247,54 +265,101 @@ def register():
             distance = calculate_distance(address)
             hashed_password = generate_password_hash(password)
             
-            cur = mysql.connection.cursor()
+            # Get database connection
+            try:
+                cur = mysql.connection.cursor()
+            except Exception as db_conn_error:
+                print(f"Database connection error: {str(db_conn_error)}")
+                flash('Cannot connect to database. Please try again later or contact support.', 'error')
+                return render_template('register.html')
             
-            # Check if USN already exists
-            cur.execute('SELECT id FROM user WHERE usn = %s', (usn,))
-            if cur.fetchone():
+            # Check if USN already exists (case-insensitive check)
+            try:
+                cur.execute('SELECT id, usn FROM user WHERE UPPER(usn) = UPPER(%s)', (usn,))
+                existing_user = cur.fetchone()
+                if existing_user:
+                    existing_usn = existing_user[1] if len(existing_user) > 1 else usn
+                    cur.close()
+                    flash(f'USN "{existing_usn}" is already registered. If this is your USN, please login instead. Otherwise, use a different USN.', 'error')
+                    return render_template('register.html')
+            except Exception as check_error:
+                print(f"Error checking USN: {str(check_error)}")
                 cur.close()
-                flash(f'USN {usn} is already registered. Please use a different USN or login.', 'error')
+                flash('Error checking USN. Please try again.', 'error')
                 return render_template('register.html')
             
             # Check if email already exists
-            cur.execute('SELECT id FROM user WHERE email = %s', (email,))
-            if cur.fetchone():
+            try:
+                cur.execute('SELECT id FROM user WHERE email = %s', (email,))
+                if cur.fetchone():
+                    cur.close()
+                    flash(f'Email "{email}" is already registered. Please use a different email or login.', 'error')
+                    return render_template('register.html')
+            except Exception as check_error:
+                print(f"Error checking email: {str(check_error)}")
                 cur.close()
-                flash('This email is already registered. Please use a different email or login.', 'error')
+                flash('Error checking email. Please try again.', 'error')
                 return render_template('register.html')
             
             # Insert new user
-            cur.execute('''
-                INSERT INTO user (usn, name, phone, email, password, bus_number, address, distance, balance)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ''', (usn, name, phone, email, hashed_password, bus_number, address, distance, 0))
-            mysql.connection.commit()
-            cur.close()
-            
-            flash('Registration successful! Please login.', 'success')
-            return redirect(url_for('login'))
-        except IntegrityError as e:
-            # Handle database integrity errors (duplicate entries, foreign key violations)
-            error_msg = str(e).lower()
-            if 'duplicate' in error_msg or 'unique' in error_msg:
-                if 'usn' in error_msg:
-                    flash(f'USN {usn} is already registered. Please use a different USN or login.', 'error')
-                elif 'email' in error_msg:
-                    flash('This email is already registered. Please use a different email or login.', 'error')
+            try:
+                cur.execute('''
+                    INSERT INTO user (usn, name, phone, email, password, bus_number, address, distance, balance)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (usn, name, phone, email, hashed_password, bus_number, address, distance, 0))
+                mysql.connection.commit()
+                cur.close()
+                
+                flash('Registration successful! Please login.', 'success')
+                return redirect(url_for('login'))
+            except IntegrityError as e:
+                mysql.connection.rollback()
+                error_msg = str(e).lower()
+                print(f"Integrity error: {error_msg}")
+                if 'duplicate' in error_msg or 'unique' in error_msg:
+                    if 'usn' in error_msg or '1062' in error_msg:
+                        flash(f'USN "{usn}" is already registered. Please use a different USN or login.', 'error')
+                    elif 'email' in error_msg:
+                        flash(f'Email "{email}" is already registered. Please use a different email or login.', 'error')
+                    else:
+                        flash('This information is already registered. Please check your details and try again.', 'error')
                 else:
-                    flash('This information is already registered. Please check your details.', 'error')
-            else:
-                flash('Registration failed due to database constraint. Please check your information.', 'error')
-            return render_template('register.html')
-        except PyMySQLError as e:
-            # Handle database connection/query errors
-            print(f"Database error during registration: {str(e)}")
-            flash('Database error occurred. Please try again later.', 'error')
+                    flash('Registration failed due to database constraint. Please check your information.', 'error')
+                if cur:
+                    cur.close()
+                return render_template('register.html')
+            except PyMySQLError as e:
+                mysql.connection.rollback()
+                print(f"Database error during registration: {str(e)}")
+                error_msg = str(e)
+                if 'connection' in error_msg.lower():
+                    flash('Database connection error. Please try again later.', 'error')
+                else:
+                    flash(f'Database error: {error_msg}. Please try again.', 'error')
+                if cur:
+                    cur.close()
+                return render_template('register.html')
+        except KeyError as e:
+            # Missing form field
+            missing_field = str(e).replace("'", "")
+            flash(f'Missing required field: {missing_field}. Please fill in all fields.', 'error')
+            if cur:
+                cur.close()
             return render_template('register.html')
         except Exception as e:
             # Handle any other errors
-            print(f"Error during registration: {str(e)}")
-            flash(f'Registration failed: {str(e)}. Please try again.', 'error')
+            error_msg = str(e)
+            print(f"Unexpected error during registration: {error_msg}")
+            print(f"Error type: {type(e).__name__}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            if cur:
+                try:
+                    mysql.connection.rollback()
+                    cur.close()
+                except:
+                    pass
+            flash(f'Registration failed: {error_msg}. Please check all fields and try again.', 'error')
             return render_template('register.html')
     
     return render_template('register.html')
