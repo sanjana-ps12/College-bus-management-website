@@ -16,7 +16,8 @@ except ImportError:
     pass  # python-dotenv not available, use system environment variables
 
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY')
+# Secret key is required for sessions - use a default if not set (not secure for production!)
+app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # MySQL Configuration using PyMySQL
 class MySQL:
@@ -48,15 +49,23 @@ class MySQL:
             raise
     
     def get_connection(self):
-        """Get or create database connection"""
+        """Get or create database connection (serverless-friendly)"""
         try:
             if self._connection is None:
                 self.connect()
             else:
                 # Test if connection is still alive
-                self._connection.ping(reconnect=True)
-        except:
+                # In serverless, connections may be closed between invocations
+                try:
+                    self._connection.ping(reconnect=False)
+                except:
+                    # Connection lost, reconnect
+                    self._connection = None
+                    self.connect()
+        except Exception as e:
             # Connection lost, reconnect
+            print(f"Connection error, reconnecting: {str(e)}")
+            self._connection = None
             self.connect()
         return self._connection
     
@@ -153,8 +162,30 @@ def init_db():
         finally:
             cur.close()
 
-# Initialize database tables only once
-init_db()  # Uncommenting this to create tables
+# Initialize database tables only once (lazy initialization for serverless)
+# Don't call init_db() at module level - it will fail in serverless cold starts
+# Instead, initialize on first request or use a separate migration script
+_db_initialized = False
+
+def ensure_db_initialized():
+    """Lazy initialization of database tables - only runs when needed"""
+    global _db_initialized
+    if not _db_initialized:
+        try:
+            init_db()
+            _db_initialized = True
+        except Exception as e:
+            print(f"Warning: Database initialization failed: {str(e)}")
+            # Don't fail the app if DB init fails - tables might already exist
+
+# Flask before_request hook to ensure DB is initialized for routes that need it
+@app.before_request
+def before_request():
+    """Ensure database is initialized before handling requests"""
+    # Only initialize if we're accessing a route that needs the database
+    # Skip for static files and simple routes
+    if request.endpoint and request.endpoint not in ['static', 'generate_qr']:
+        ensure_db_initialized()
 
 # Helper function to calculate distance
 def calculate_distance(address):
@@ -767,6 +798,10 @@ def submit_feedback():
 @app.errorhandler(404)
 def not_found(error):
     return render_template('404.html'), 404
+
+# Export handler for Vercel serverless functions
+# This is required for @vercel/python to work correctly
+handler = app
 
 if __name__ == '__main__':
     app.run(debug=True) 
