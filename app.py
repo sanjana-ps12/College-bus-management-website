@@ -8,7 +8,7 @@ import json
 import pymysql
 
 # Load environment variables from .env file (only for local development)
-# On Vercel, environment variables are set in the dashboard
+# On Vercel/Render, environment variables are set in the dashboard
 try:
     from dotenv import load_dotenv
     load_dotenv()  # This will silently fail if .env doesn't exist (which is fine for Vercel)
@@ -839,6 +839,7 @@ def handle_exception(e):
 # Export handler for Vercel serverless functions
 # Vercel Python runtime expects a WSGI application
 # The handler must be the Flask app instance
+# For Render, gunicorn will use: gunicorn app:app
 handler = app
 
 # For local development
