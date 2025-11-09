@@ -1,14 +1,11 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_file
-from flask_mysqldb import MySQL
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 from datetime import datetime
 import qrcode
 from io import BytesIO
 import json
-# Use PyMySQL as a drop-in replacement for mysqlclient
 import pymysql
-pymysql.install_as_MySQLdb()
 
 # Load environment variables from .env file (only for local development)
 # On Vercel, environment variables are set in the dashboard
@@ -21,6 +18,69 @@ except ImportError:
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY')
 
+# MySQL Configuration using PyMySQL
+class MySQL:
+    """Custom MySQL wrapper using PyMySQL to replace Flask-MySQLdb"""
+    def __init__(self, app=None):
+        self.app = app
+        self._connection = None
+        self.config = {}
+        if app is not None:
+            self.init_app(app)
+    
+    def init_app(self, app):
+        self.app = app
+        self.config = {
+            'host': app.config.get('MYSQL_HOST', 'localhost'),
+            'user': app.config.get('MYSQL_USER', 'root'),
+            'password': app.config.get('MYSQL_PASSWORD', ''),
+            'database': app.config.get('MYSQL_DB', ''),
+            'charset': 'utf8mb4',
+            'autocommit': False
+        }
+    
+    def connect(self):
+        """Create a new database connection"""
+        try:
+            self._connection = pymysql.connect(**self.config)
+        except Exception as e:
+            print(f"Error connecting to MySQL: {str(e)}")
+            raise
+    
+    def get_connection(self):
+        """Get or create database connection"""
+        try:
+            if self._connection is None:
+                self.connect()
+            else:
+                # Test if connection is still alive
+                self._connection.ping(reconnect=True)
+        except:
+            # Connection lost, reconnect
+            self.connect()
+        return self._connection
+    
+    def commit(self):
+        """Commit the current transaction"""
+        conn = self.get_connection()
+        if conn:
+            conn.commit()
+    
+    def rollback(self):
+        """Rollback the current transaction"""
+        conn = self.get_connection()
+        if conn:
+            conn.rollback()
+    
+    def close(self):
+        """Close the database connection"""
+        if self._connection:
+            try:
+                self._connection.close()
+            except:
+                pass
+            self._connection = None
+
 # MySQL Configuration
 app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST', 'localhost')
 app.config['MYSQL_USER'] = os.getenv('MYSQL_USER', 'root')
@@ -28,6 +88,28 @@ app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD', '1239')
 app.config['MYSQL_DB'] = os.getenv('MYSQL_DB', 'bus_management')
 
 mysql = MySQL(app)
+
+# Connection wrapper to make mysql.connection work like Flask-MySQLdb
+class ConnectionWrapper:
+    """Wrapper to make mysql.connection work like Flask-MySQLdb"""
+    def __init__(self, mysql_instance):
+        self.mysql = mysql_instance
+    
+    def cursor(self):
+        """Get a cursor from the connection"""
+        conn = self.mysql.get_connection()
+        return conn.cursor()
+    
+    def commit(self):
+        """Commit the transaction"""
+        self.mysql.commit()
+    
+    def rollback(self):
+        """Rollback the transaction"""
+        self.mysql.rollback()
+
+# Replace mysql.connection with wrapper
+mysql.connection = ConnectionWrapper(mysql)
 
 # Create required tables if they don't exist
 def init_db():
