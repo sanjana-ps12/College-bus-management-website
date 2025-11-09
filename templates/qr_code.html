@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bus QR Code - Campus Cruise</title>
+    <style>
+        body {
+            font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+            background-image: url(https://static.vecteezy.com/system/resources/previews/002/538/570/original/abstract-lavender-lilac-background-free-vector.jpg);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        .qr-code {
+            margin: 20px 0;
+        }
+        .qr-code img {
+            max-width: 400px;
+            border: 1px solid #ddd;
+            padding: 20px;
+            background: white;
+        }
+        h1 {
+            color: rgb(90, 7, 44);
+            margin-bottom: 20px;
+        }
+        .bus-info {
+            font-size: 1.2em;
+            color: #333;
+            margin: 20px 0;
+        }
+        .bus-info p {
+            margin: 10px 0;
+        }
+        .instructions {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Bus QR Code</h1>
+        <div class="bus-info">
+            <p><strong>Bus Number:</strong> 1</p>
+            <p><strong>Location:</strong> Udupi</p>
+            <p><strong>Fare:</strong> ₹30</p>
+        </div>
+        <div class="qr-code">
+            <img src="{{ url_for('generate_qr') }}" alt="Bus QR Code">
+        </div>
+        <div class="instructions">
+            <p>This QR code contains the bus information and fare details.</p>
+            <p>Scan this code at the bus stop to make your payment.</p>
+        </div>
+    </div>
+</body>
+</html> 

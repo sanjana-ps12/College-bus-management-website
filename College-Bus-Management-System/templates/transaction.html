@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transaction History</title>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f8f9fa;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-image: url(https://static.vecteezy.com/system/resources/previews/002/538/570/original/abstract-lavender-lilac-background-free-vector.jpg);
+        }
+        
+        .container {
+            background-color: rgb(214, 176, 193);
+            padding: 20px 40px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 1120px;
+            height: 90%;
+            margin: 10px 100px;
+        }
+        
+        h2 {
+            text-align: center;
+            color: rgb(90, 7, 44);
+            margin-bottom: 20px;
+        }
+        
+        .transaction-card {
+            background-color: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .transaction-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .transaction-type {
+            font-weight: bold;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        
+        .type-credit {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .type-debit {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        .transaction-amount {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        
+        .amount-credit {
+            color: #28a745;
+        }
+        
+        .amount-debit {
+            color: #dc3545;
+        }
+        
+        .transaction-details {
+            color: #666;
+            font-size: 0.9em;
+            margin: 10px 0;
+        }
+        
+        .transaction-details p {
+            margin: 5px 0;
+        }
+        
+        .transaction-time {
+            color: #999;
+            font-size: 0.8em;
+            text-align: right;
+        }
+        
+        .no-transactions {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #6c757d;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #7b4d6a;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+            transition: background-color 0.3s;
+        }
+
+        .btn:hover {
+            background: rgb(90, 7, 44);
+        }
+
+        .button-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .back-link {
+            background-color: #7b4d6a;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            padding: 10px 20px;
+            transition: background-color 0.3s;
+        }
+
+        .back-link:hover {
+            background: rgb(90, 7, 44);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Transaction History</h2>
+
+        <div class="button-container">
+            <a href="{{ url_for('dashboard') }}" style="display: block; text-align: center; margin-top: 20px; color: #6c757d; text-decoration: none;">
+                Back to Dashboard
+            </a>
+        </div>
+
+        {% if transactions %}
+            {% for transaction in transactions %}
+                <div class="transaction-card">
+                    <div class="transaction-header">
+                        <span class="transaction-type type-{{ transaction.transaction_type }}">
+                            {% if transaction.transaction_type == 'credit' %}
+                                Top Up
+                            {% else %}
+                                Bus Fare
+                            {% endif %}
+                        </span>
+                        <span class="transaction-amount amount-{{ transaction.transaction_type }}">
+                            {% if transaction.transaction_type == 'credit' %}+{% else %}-{% endif %}₹{{ "%.2f"|format(transaction.amount) }}
+                        </span>
+                    </div>
+                    <div class="transaction-details">
+                        {% if transaction.transaction_type == 'credit' %}
+                            <p><strong>Payment Method:</strong> {{ transaction.description.split('via ')[-1] if 'via' in transaction.description else 'UPI' }}</p>
+                        {% else %}
+                            <p><strong>Bus Number:</strong> {{ transaction.bus_number if transaction.bus_number != 'N/A' else '-' }}</p>
+                            <p><strong>Location:</strong> {{ transaction.location if transaction.location != 'N/A' else '-' }}</p>
+                            <p><strong>Description:</strong> {{ transaction.description }}</p>
+                        {% endif %}
+                    </div>
+                    <div class="transaction-time">
+                        {{ transaction.created_at.strftime('%d %b %Y, %I:%M %p') }}
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="no-transactions">
+                <h3>No Transactions Yet</h3>
+                <p>Your transaction history will appear here once you start using the bus service or top up your balance.</p>
+            </div>
+        {% endif %}
+
+        <div class="footer">
+            <p>&copy; 2025 Bus Reservation System. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
