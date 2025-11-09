@@ -37,14 +37,43 @@ class MySQL:
             'user': app.config.get('MYSQL_USER', 'root'),
             'password': app.config.get('MYSQL_PASSWORD', ''),
             'database': app.config.get('MYSQL_DB', ''),
+            'port': app.config.get('MYSQL_PORT', 3306),
             'charset': 'utf8mb4',
-            'autocommit': False
+            'autocommit': False,
+            'connect_timeout': 10
         }
     
     def connect(self):
         """Create a new database connection"""
         try:
+            # Check if we're in production and database config is missing
+            is_production = os.getenv('RENDER') or os.getenv('VERCEL') or not os.getenv('FLASK_ENV') == 'development'
+            if is_production and self.config.get('host') == 'localhost':
+                raise ConnectionError(
+                    "Database configuration error: In production, MYSQL_HOST environment variable must be set. "
+                    "Please set MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, and MYSQL_DB in your deployment environment."
+                )
+            
             self._connection = pymysql.connect(**self.config)
+            print(f"Successfully connected to MySQL at {self.config.get('host')}:{self.config.get('port')}")
+        except pymysql.Error as e:
+            error_msg = str(e)
+            print(f"MySQL connection error: {error_msg}")
+            # Provide helpful error messages
+            if 'Connection refused' in error_msg or 'Can\'t connect' in error_msg:
+                if self.config.get('host') == 'localhost':
+                    raise ConnectionError(
+                        "Cannot connect to database on localhost. "
+                        "In production, you must set MYSQL_HOST environment variable to your database server address. "
+                        f"Current host: {self.config.get('host')}"
+                    )
+                else:
+                    raise ConnectionError(
+                        f"Cannot connect to MySQL server at {self.config.get('host')}:{self.config.get('port')}. "
+                        "Please check: 1) Database server is running, 2) Host and port are correct, "
+                        "3) Network/firewall allows connections, 4) Database credentials are correct."
+                    )
+            raise
         except Exception as e:
             print(f"Error connecting to MySQL: {str(e)}")
             raise
@@ -97,10 +126,13 @@ class MySQL:
             self._connection = None
 
 # MySQL Configuration
-app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST', 'localhost')
-app.config['MYSQL_USER'] = os.getenv('MYSQL_USER', 'root')
-app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD', '1239')
-app.config['MYSQL_DB'] = os.getenv('MYSQL_DB', 'bus_management')
+# In production (Render/Vercel), these MUST be set as environment variables
+# For local development, you can use .env file or defaults
+app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST') or os.getenv('DB_HOST') or 'localhost'
+app.config['MYSQL_USER'] = os.getenv('MYSQL_USER') or os.getenv('DB_USER') or 'root'
+app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD') or os.getenv('DB_PASSWORD') or '1239'
+app.config['MYSQL_DB'] = os.getenv('MYSQL_DB') or os.getenv('DB_NAME') or 'bus_management'
+app.config['MYSQL_PORT'] = int(os.getenv('MYSQL_PORT') or os.getenv('DB_PORT') or 3306)
 
 mysql = MySQL(app)
 
@@ -268,9 +300,21 @@ def register():
             # Get database connection
             try:
                 cur = mysql.connection.cursor()
+            except ConnectionError as db_conn_error:
+                error_msg = str(db_conn_error)
+                print(f"Database connection error: {error_msg}")
+                if 'localhost' in error_msg or 'environment variable' in error_msg.lower():
+                    flash('Database configuration error: Database connection settings are missing. Please contact the administrator.', 'error')
+                else:
+                    flash('Cannot connect to database. Please try again later or contact support.', 'error')
+                return render_template('register.html')
             except Exception as db_conn_error:
-                print(f"Database connection error: {str(db_conn_error)}")
-                flash('Cannot connect to database. Please try again later or contact support.', 'error')
+                error_msg = str(db_conn_error)
+                print(f"Database connection error: {error_msg}")
+                if 'localhost' in error_msg or 'Connection refused' in error_msg:
+                    flash('Database configuration error: Cannot connect to database server. Please contact the administrator.', 'error')
+                else:
+                    flash('Cannot connect to database. Please try again later or contact support.', 'error')
                 return render_template('register.html')
             
             # Check if USN already exists (case-insensitive check)
@@ -826,14 +870,95 @@ def notification():
 
 @app.route('/test-db')
 def test_db():
+    """Test database connection and show diagnostic information"""
+    diagnostic_info = {
+        'status': 'unknown',
+        'message': '',
+        'config': {
+            'host': app.config.get('MYSQL_HOST', 'not set'),
+            'user': app.config.get('MYSQL_USER', 'not set'),
+            'database': app.config.get('MYSQL_DB', 'not set'),
+            'port': app.config.get('MYSQL_PORT', 'not set'),
+            'password_set': 'Yes' if app.config.get('MYSQL_PASSWORD') else 'No'
+        },
+        'environment': {
+            'is_render': bool(os.getenv('RENDER')),
+            'is_vercel': bool(os.getenv('VERCEL')),
+            'flask_env': os.getenv('FLASK_ENV', 'not set')
+        },
+        'error_details': None
+    }
+    
     try:
+        # Try to get connection
         cur = mysql.connection.cursor()
-        cur.execute('SELECT 1')
+        cur.execute('SELECT 1 as test, DATABASE() as current_db, USER() as current_user, VERSION() as mysql_version')
         result = cur.fetchone()
         cur.close()
-        return jsonify({'status': 'success', 'message': 'Database connection successful'})
+        
+        diagnostic_info['status'] = 'success'
+        diagnostic_info['message'] = 'Database connection successful'
+        diagnostic_info['connection_info'] = {
+            'test_query': result[0] if result else None,
+            'current_database': result[1] if result and len(result) > 1 else None,
+            'current_user': result[2] if result and len(result) > 2 else None,
+            'mysql_version': result[3] if result and len(result) > 3 else None
+        }
+        
+        return jsonify(diagnostic_info)
+    except ConnectionError as e:
+        diagnostic_info['status'] = 'connection_error'
+        diagnostic_info['message'] = str(e)
+        diagnostic_info['error_details'] = {
+            'type': 'ConnectionError',
+            'suggestion': 'Check if MYSQL_HOST environment variable is set correctly'
+        }
+        return jsonify(diagnostic_info), 500
+    except PyMySQLError as e:
+        diagnostic_info['status'] = 'database_error'
+        diagnostic_info['message'] = str(e)
+        error_code = getattr(e, 'args', [None])[0] if hasattr(e, 'args') and e.args else None
+        diagnostic_info['error_details'] = {
+            'type': 'PyMySQLError',
+            'error_code': error_code,
+            'suggestion': 'Check database credentials, host, port, and network connectivity'
+        }
+        return jsonify(diagnostic_info), 500
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)})
+        diagnostic_info['status'] = 'error'
+        diagnostic_info['message'] = str(e)
+        diagnostic_info['error_details'] = {
+            'type': type(e).__name__,
+            'suggestion': 'Check application logs for more details'
+        }
+        return jsonify(diagnostic_info), 500
+
+@app.route('/db-config')
+def db_config():
+    """Show database configuration (without sensitive data) - for debugging"""
+    config_info = {
+        'host': app.config.get('MYSQL_HOST', 'not set'),
+        'user': app.config.get('MYSQL_USER', 'not set'),
+        'database': app.config.get('MYSQL_DB', 'not set'),
+        'port': app.config.get('MYSQL_PORT', 'not set'),
+        'password_configured': bool(app.config.get('MYSQL_PASSWORD')),
+        'environment_variables': {
+            'MYSQL_HOST': 'set' if os.getenv('MYSQL_HOST') else 'not set',
+            'MYSQL_USER': 'set' if os.getenv('MYSQL_USER') else 'not set',
+            'MYSQL_PASSWORD': 'set' if os.getenv('MYSQL_PASSWORD') else 'not set',
+            'MYSQL_DB': 'set' if os.getenv('MYSQL_DB') else 'not set',
+            'MYSQL_PORT': 'set' if os.getenv('MYSQL_PORT') else 'not set',
+            'DB_HOST': 'set' if os.getenv('DB_HOST') else 'not set',
+            'DB_USER': 'set' if os.getenv('DB_USER') else 'not set',
+            'DB_PASSWORD': 'set' if os.getenv('DB_PASSWORD') else 'not set',
+            'DB_NAME': 'set' if os.getenv('DB_NAME') else 'not set',
+        },
+        'deployment_platform': {
+            'is_render': bool(os.getenv('RENDER')),
+            'is_vercel': bool(os.getenv('VERCEL')),
+        }
+    }
+    return jsonify(config_info)
 
 @app.route('/view-db')
 def view_db():
