@@ -44,7 +44,7 @@
             color: #333;
             font-weight: 500;
         }
-        .form-group input, .form-group textarea {
+        .form-group input, .form-group textarea, .form-group select {
             width: 100%;
             padding: 10px;
             border: 1px solid #ddd;
@@ -52,8 +52,9 @@
             font-size: 15px;
             transition: border-color 0.3s;
             background-color: white;
+            box-sizing: border-box;
         }
-        .form-group input:focus, .form-group textarea:focus {
+        .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
             border-color: #7b4d6a;
             outline: none;
             box-shadow: 0 0 5px rgba(123, 77, 106, 0.2);
@@ -124,6 +125,16 @@
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
+        .form-hint {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+            font-style: italic;
+        }
+        .form-hint i {
+            margin-right: 5px;
+            color: #7b4d6a;
+        }
     </style>
 </head>
 <body>
@@ -140,7 +151,11 @@
             <form method="POST" action="{{ url_for('register') }}" id="registration-form">
                 <div class="form-group">
                     <label for="usn">USN</label>
-                    <input type="text" id="usn" name="usn" required placeholder="Enter your USN">
+                    <input type="text" id="usn" name="usn" required placeholder="e.g., 1SI20CS001 or 20CS001" pattern="[A-Z0-9]+" title="USN should contain only uppercase letters and numbers">
+                    <div class="form-hint">
+                        <i class="fas fa-info-circle"></i>
+                        Format: Year + Branch Code + Number (e.g., 1SI20CS001, 20CS001, 21EC123)
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="name">Full Name</label>
@@ -157,10 +172,14 @@
                 <div class="form-group">
                     <label for="password">Password</label>
                     <div class="password-container">
-                        <input type="password" id="password" name="password" required placeholder="Enter your password">
+                        <input type="password" id="password" name="password" required placeholder="Enter your password" minlength="6" pattern=".{6,}" title="Password must be at least 6 characters long">
                         <button type="button" class="password-toggle" onclick="togglePasswordVisibility('password', 'password-toggle')">
                             <i class="fas fa-eye" id="password-toggle"></i>
                         </button>
+                    </div>
+                    <div class="form-hint">
+                        <i class="fas fa-lock"></i>
+                        Password must be at least 6 characters long. Use a combination of letters and numbers for better security.
                     </div>
                 </div>
                 <div class="form-group">
